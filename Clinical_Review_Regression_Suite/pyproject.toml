@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clinical-review-regression"
+version = "1.0.0"
+description = "Regression and safety evaluation suite for a clinical RAG assistant"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright==1.55.0", "pandas==2.3.3", "scikit-learn==1.7.2",
+  "pydantic==2.13.5", "pydantic-settings==2.10.1", "python-dotenv==1.1.1",
+  "tenacity==9.1.2", "typer==0.17.4", "Jinja2==3.1.6", "openai==1.109.1"
+]
+
+[project.scripts]
+clinical-regression = "clinical_review_regression.runner:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
