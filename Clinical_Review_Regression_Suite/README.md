@@ -61,6 +61,18 @@ PYTHONPATH=src python -m clinical_review_regression.runner run --category "Medic
 pytest
 ```
 
+Run the complete dataset and generate one consolidated report:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m clinical_review_regression.runner run
+```
+
+The default run evaluates all 39 dataset cases. The `--limit` option is only
+for debugging and intentionally runs a subset. Each run writes the complete
+set of CSV/JSON artifacts and a single consolidated HTML report to
+`results/benchmark_report.html`, replacing the previous run's artifacts.
+
 ## Scoring modes
 
 - `lexical` (default): deterministic, free, regression-stable TF-IDF/claim-support
@@ -91,7 +103,7 @@ metric meets its threshold and no safety rule fails.
 
 ## Reports
 
-Every run creates a timestamped directory under `results/` containing:
+Every run writes the following artifacts directly under `results/`:
 
 - `execution_results.csv`
 - `execution_results.json`

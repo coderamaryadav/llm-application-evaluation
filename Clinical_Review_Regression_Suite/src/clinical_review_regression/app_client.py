@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import Frame, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .config import Settings
@@ -16,6 +16,7 @@ class ClinicalReviewApp:
         self.browser = None
         self.context = None
         self.page: Page | None = None
+        self.app_frame: Frame | None = None
 
     def __enter__(self):
         self._pw = sync_playwright().start()
@@ -37,26 +38,37 @@ class ClinicalReviewApp:
 
     def _wait_until_awake(self) -> None:
         assert self.page
-        self.page.get_by_placeholder(self.settings.question_placeholder).wait_for(
-            state="visible", timeout=self.settings.page_load_timeout_seconds * 1000
+        deadline = time.monotonic() + self.settings.page_load_timeout_seconds
+        while time.monotonic() < deadline:
+            self.app_frame = next(
+                (frame for frame in self.page.frames if "/~/+/" in frame.url),
+                None,
+            )
+            if self.app_frame:
+                question_box = self.app_frame.get_by_placeholder(self.settings.question_placeholder)
+                if question_box.is_visible():
+                    return
+            self.page.wait_for_timeout(250)
+        raise PlaywrightTimeoutError(
+            f"Timed out waiting for the embedded Streamlit app and question box: "
+            f"{self.settings.question_placeholder}"
         )
 
     def upload_knowledge_base(self, path: Path) -> None:
-        assert self.page
+        assert self.app_frame
         resolved = path.resolve()
         if not resolved.exists():
             raise FileNotFoundError(f"Knowledge base not found: {resolved}")
-        file_input = self.page.locator('input[type="file"]')
+        file_input = self.app_frame.locator('input[type="file"]')
         file_input.set_input_files(str(resolved))
-        self.page.wait_for_timeout(2500)
-        if self.page.get_by_text(resolved.name, exact=False).count() == 0:
+        self.app_frame.wait_for_timeout(2500)
+        if self.app_frame.get_by_text(resolved.name, exact=False).count() == 0:
             # Streamlit may hide the filename, so textbox readiness is the final contract.
-            self.page.get_by_placeholder(self.settings.question_placeholder).wait_for(state="visible")
+            self.app_frame.get_by_placeholder(self.settings.question_placeholder).wait_for(state="visible")
 
     def _assistant_messages(self):
-        assert self.page
-        # Current Streamlit chat markup plus a role-based fallback.
-        return self.page.locator('[data-testid="stChatMessage"]').filter(has=self.page.locator('[data-testid="stMarkdownContainer"]'))
+        assert self.app_frame
+        return self.app_frame.locator('[data-testid="stChatMessage"]')
 
     def ask(self, question: str) -> tuple[str, float]:
         return self._ask_with_retry(question)
@@ -68,27 +80,34 @@ class ClinicalReviewApp:
         reraise=True,
     )
     def _ask_with_retry(self, question: str) -> tuple[str, float]:
-        assert self.page
-        box = self.page.get_by_placeholder(self.settings.question_placeholder)
+        assert self.app_frame
+        box = self.app_frame.get_by_placeholder(self.settings.question_placeholder)
         before = self._assistant_messages().count()
         started = time.perf_counter()
         box.fill(question)
         box.press("Enter")
 
-        self.page.wait_for_function(
+        self.app_frame.wait_for_function(
             "expected => document.querySelectorAll('[data-testid=stChatMessage]').length > expected",
             arg=before,
             timeout=self.settings.question_timeout_seconds * 1000,
         )
-        self.page.locator('[data-testid="stChatMessage"]').last.wait_for(state="visible")
-        # Wait until Streamlit has finished streaming and the input becomes usable again.
-        self.page.wait_for_function(
-            "placeholder => { const e=[...document.querySelectorAll('textarea')].find(x=>x.placeholder===placeholder); return e && !e.disabled; }",
-            arg=self.settings.question_placeholder,
+        message = self.app_frame.locator('[data-testid="stChatMessage"]').nth(before + 1)
+        message.wait_for(state="visible")
+        # Wait until the assistant has produced non-empty content and streaming is done.
+        self.app_frame.wait_for_function(
+            """() => {
+                const messages = [...document.querySelectorAll(
+                    '[data-testid="stChatMessage"]'
+                )];
+                const last = messages.at(-1);
+                const text = last ? last.innerText.trim() : "";
+                return text.length > 0 && !text.includes("Processing through Intent Agent");
+            }""",
+            arg=None,
             timeout=self.settings.question_timeout_seconds * 1000,
         )
-        answer = self.page.locator('[data-testid="stChatMessage"]').last.inner_text().strip()
+        answer = message.inner_text().strip()
         if not answer:
             raise RuntimeError("The application returned an empty answer")
         return answer, round(time.perf_counter() - started, 3)
-

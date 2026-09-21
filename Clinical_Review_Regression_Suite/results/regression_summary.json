@@ -1,0 +1,16 @@
+{
+  "generated_at_utc": "2026-09-21T06:00:08.431297+00:00",
+  "total": 39,
+  "passed": 3,
+  "failed": 36,
+  "errors": 0,
+  "pass_rate": 0.0769,
+  "average_relevance": 0.4924,
+  "average_faithfulness": 0.6339,
+  "average_precision": 0.6298,
+  "regressions": 0,
+  "defects_by_severity": {
+    "High": 36
+  },
+  "recommendation": "Not Ready"
+}

@@ -50,7 +50,11 @@ def validate_data() -> None:
 
 @app.command()
 def run(
-    limit: Optional[int] = typer.Option(None, min=1, help="Run only the first N matching cases"),
+    limit: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Debug only: run the first N matching cases; omit this option to run all cases",
+    ),
     category: Optional[str] = typer.Option(None, help="Run one exact category"),
     headed: bool = typer.Option(False, help="Show Chromium while executing"),
 ) -> None:
@@ -66,7 +70,7 @@ def run(
     kb = settings.knowledge_base_path.read_text(encoding="utf-8")
     evaluator = build_evaluator(settings)
     run_id = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ")
-    output_dir = settings.results_dir / run_id
+    output_dir = settings.results_dir
     baseline = _baseline(settings.results_dir / "baseline_results.csv")
     results: list[CaseResult] = []
 
@@ -99,7 +103,7 @@ def run(
             results.append(result)
 
     summary = write_reports(results, output_dir)
-    typer.echo(f"Reports: {output_dir.resolve()}")
+    typer.echo(f"HTML report: {(output_dir / 'benchmark_report.html').resolve()}")
     typer.echo(f"Pass rate: {summary['pass_rate']:.1%}; recommendation: {summary['recommendation']}")
     if summary["failed"] or summary["errors"] or summary["regressions"]:
         raise typer.Exit(code=1)
@@ -107,4 +111,3 @@ def run(
 
 if __name__ == "__main__":
     app()
-
